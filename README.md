@@ -1,2 +1,3 @@
-# maghreb-orbiters
-NASA Space Apps Challenge team project for astronaut health monitoring software.
+# Maghreb Orbiters
+
+NASA Space Apps Challenge team working on **Create Health Monitoring Software for Astronauts on Space Missions**.
