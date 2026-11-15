@@ -155,8 +155,11 @@ const LM = { lShoulder:11, rShoulder:12, lElbow:13, rElbow:14, lWrist:15, rWrist
 const BONES = [[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24],
                [23,25],[25,27],[24,26],[26,28],[27,31],[28,32],[15,19],[16,20]];
 const KEY_JOINTS = [11,12,13,14,15,16,23,24,25,26,27,28];
-// rep gates (degrees of joint angle): flexed -> extended transition = one rep
-const REP_GATE = { knee:{flex:120, ext:160}, elbow:{flex:95, ext:150} };
+// rep detection auto-calibrates to the observed range of motion:
+// gates sit at 25% / 75% of the smoothed signal's own min-max window,
+// so it works across exercises and camera setups without hand-tuned angles.
+const MIN_ROM_FOR_REPS = 15;   // degrees of observed swing before counting
+const MIN_REP_CYCLE = 0.7;     // seconds; no human moves faster than this
 const CH_WINDOW = 30; // seconds of history on the chart
 
 let pose = null, camStream = null, camMode = false, rafId = 0, S = null;
@@ -167,7 +170,7 @@ function resetSession() {
         energySum:0, energyN:0, accSum:0, accN:0,
         rom: { lKnee:[999,0], rKnee:[999,0], lElbow:[999,0], rElbow:[999,0] },
         reps: { knee:{n:0, st:"ext", lastT:0, lastFlip:0}, elbow:{n:0, st:"ext", lastT:0, lastFlip:0} },
-        smAng: null,
+        smAng: null, angLo: { knee:999, elbow:999 }, angHi: { knee:0, elbow:0 },
         repTimes: [],        // {t, kind}
         asymSum:0, asymN:0,
         hist: [],            // {t, lKnee, rKnee, lElbow, rElbow}
@@ -234,11 +237,14 @@ function drawAngleArc(lm, a, b, c, W, H, label) {
 }
 
 function repTick(kind, ang, t) {
-  const g = REP_GATE[kind], r = S.reps[kind];
-  if (r.st === "ext" && ang < g.flex) {
-    if (t - r.lastFlip >= 0.7) { r.st = "flex"; r.lastFlip = t; }
-  } else if (r.st === "flex" && ang > g.ext) {
-    if (t - r.lastFlip >= 0.7) {
+  const lo = S.angLo[kind], hi = S.angHi[kind];
+  if (hi - lo < MIN_ROM_FOR_REPS) return;
+  const flex = lo + 0.25 * (hi - lo), ext = hi - 0.25 * (hi - lo);
+  const r = S.reps[kind];
+  if (r.st === "ext" && ang < flex) {
+    if (t - r.lastFlip >= MIN_REP_CYCLE) { r.st = "flex"; r.lastFlip = t; }
+  } else if (r.st === "flex" && ang > ext) {
+    if (t - r.lastFlip >= MIN_REP_CYCLE) {
       r.st = "ext"; r.n++; r.lastFlip = t;
       if (r.lastT) S.tempoLast = t - r.lastT;
       r.lastT = t; S.repTimes.push({t, kind});
@@ -277,8 +283,12 @@ function processResult(res, t) {
   const A = 0.35;
   S.smAng.knee  += A * ((ang.lKnee  + ang.rKnee ) / 2 - S.smAng.knee);
   S.smAng.elbow += A * ((ang.lElbow + ang.rElbow) / 2 - S.smAng.elbow);
-  repTick("knee", S.smAng.knee, t);
-  repTick("elbow", S.smAng.elbow, t);
+  // keep the observed range per channel, then rep-detect within it
+  for (const k of ["knee", "elbow"]) {
+    if (S.smAng[k] < S.angLo[k]) S.angLo[k] = S.smAng[k];
+    if (S.smAng[k] > S.angHi[k]) S.angHi[k] = S.smAng[k];
+    repTick(k, S.smAng[k], t);
+  }
   // symmetry: mean |left - right| over knee+elbow
   S.asymSum += (Math.abs(ang.lKnee - ang.rKnee) + Math.abs(ang.lElbow - ang.rElbow)) / 2; S.asymN++;
 
@@ -443,7 +453,7 @@ function endSession() {
 $("b-close").onclick = () => $("report").classList.remove("open");
 $("b-again").onclick = () => { $("report").classList.remove("open"); };
 
-window.__dbg = () => S ? {frames:S.frames, detected:S.detected, energyN:S.energyN, energySum:+S.energySum.toFixed(4), hasPrev:!!S.prev, accN:S.accN, t0:S.t0, tEnd:S.tEnd} : null;
+window.__dbg = () => S ? {frames:S.frames, detected:S.detected, energyN:S.energyN, energySum:+S.energySum.toFixed(4), hasPrev:!!S.prev, accN:S.accN, t0:S.t0, tEnd:S.tEnd, reps:{knee:S.reps.knee.n, elbow:S.reps.elbow.n}, rom:{knee:+(S.angHi.knee-S.angLo.knee).toFixed(1), elbow:+(S.angHi.elbow-S.angLo.elbow).toFixed(1)}} : null;
 loadEngine();
 // headless/self-test hook
 if (new URLSearchParams(location.search).has("autotest")) {
