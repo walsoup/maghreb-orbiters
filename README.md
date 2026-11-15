@@ -16,7 +16,7 @@ On a long mission, exercise is the main countermeasure against bone and muscle l
 - **Left/right symmetry.** Mean left-right joint-angle difference, live. Growing asymmetry is the classic early guarding signal.
 - **Movement energy and smoothness.** Joint speed normalized to torso length, plus acceleration-based smoothness.
 - **Streaming kinematics chart.** Knee and elbow angles, left and right, over a rolling 30-second window, with a tick every detected rep.
-- **Session report.** Reps, ROM, energy, smoothness, asymmetry, duration, tracking quality - with percent deltas against your previous session on the same device. The quality gate refuses to score sessions under 50% tracking quality or 20 seconds: a score from a bad session is worse than no score.
+- **Session report.** Reps, ROM, energy, smoothness, asymmetry, duration, tracking quality - with percent deltas against your previous session on the same device. The quality gate refuses to score sessions under 50% tracking quality or 15 seconds: a score from a bad session is worse than no score.
 
 ## Honesty box
 
@@ -24,12 +24,47 @@ This is experimental movement analysis, not a clinical instrument. Every number 
 
 ## Run it
 
-No build, no install. Open `index.html` in a browser, or use the live demo. The pose engine (MediaPipe model + runtime) loads from public CDNs, so first load needs an internet connection; analysis itself is fully local.
+No build, no package install. The app uses plain ES modules, which browsers only load over HTTP(S) - opening `index.html` via `file://` will not work. Serve the repo root over HTTP and open the page:
+
+```
+python3 -m http.server 8000
+# then open http://localhost:8000/
+```
+
+On GitHub Pages the same files are served as-is (project path `/maghreb-orbiters/`). The pose engine (MediaPipe model + runtime) loads from public CDNs, so first load needs an internet connection; analysis itself is fully local. Optional local fallback: if `vision_bundle.mjs` and `pose_landmarker_full.task` (plus the MediaPipe wasm files) are placed at the project root, they are used instead of the CDN.
+
+## Architecture
+
+Static, no-build multi-file app - plain HTML, CSS and ES modules only:
+
+- `index.html` - page shell: markup, `<link>` to the stylesheet, and `<script type="module" src="js/app.mjs">`
+- `css/styles.css` - all styling (extracted verbatim from the original single file)
+- `js/config.mjs` - constants: CDN/local engine paths, landmark indices, bones, thresholds
+- `js/geometry.mjs` - pure joint geometry: aspect-corrected angles, distances, visibility check
+- `js/session.mjs` - pure session state: metrics accumulation, EMA-smoothed rep detection, session stats and the report quality gate
+- `js/pose-engine.mjs` - MediaPipe Pose Landmarker loading (optional local runtime/model at project root, CDN fallback; GPU then CPU)
+- `js/render.mjs` - canvas rendering: skeleton, motion trails, angle arcs, kinematics chart
+- `js/report.mjs` - session report and previous-session deltas (localStorage)
+- `js/app.mjs` - orchestration: DOM wiring, frame loop, video/webcam/upload sources
+- `tests/` - focused unit tests for geometry, rep counting and the session gate, using only Node's built-in test runner
+
+State flows one way: `app.mjs` owns the DOM, video and animation loop and passes the session object and dependencies into the other modules; the pure modules (`config`, `geometry`, `session`) never import the DOM or each other's consumers, so there are no circular imports.
+
+## Tests
+
+Requires Node.js (built-in test runner only, nothing to install):
+
+```
+node --test tests/*.test.mjs
+```
 
 ## Repo layout
 
-- `index.html` - the whole app (HTML + CSS + JS, no dependencies to install)
-- `astro-motion.mp4` - demo clip cut from NASA's "How Do Astronauts Exercise in Space?" (public domain)
+- `index.html` - page shell (see Architecture above)
+- `css/styles.css` - stylesheet
+- `js/` - ES modules (see Architecture above)
+- `tests/` - Node built-in unit tests (see Tests above)
+- `astro-motion.mp4` - demo clip cut from NASA's "How Do Astronauts Exercise in Space?" (public domain, kept at project root; `js/config.mjs` references it by that page-relative name)
 - `LICENSE` - MIT
 
 CDN dependencies at runtime: https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision, https://storage.googleapis.com/mediapipe-models, Google Fonts (Space Grotesk, JetBrains Mono).
