@@ -170,7 +170,7 @@ function resetSession() {
         energySum:0, energyN:0, accSum:0, accN:0,
         rom: { lKnee:[999,0], rKnee:[999,0], lElbow:[999,0], rElbow:[999,0] },
         reps: { knee:{n:0, st:"ext", lastT:0, lastFlip:0}, elbow:{n:0, st:"ext", lastT:0, lastFlip:0} },
-        smAng: null, angLo: { knee:999, elbow:999 }, angHi: { knee:0, elbow:0 },
+        smAng: null, angLo: { knee:999, elbow:999 }, angHi: { knee:0, elbow:0 }, durSum:0,
         repTimes: [],        // {t, kind}
         asymSum:0, asymN:0,
         hist: [],            // {t, lKnee, rKnee, lElbow, rElbow}
@@ -264,6 +264,7 @@ function processResult(res, t) {
   trackEl.style.color = ok ? "#4ef0c8" : "#ffb84d";
   S.detected++;
   if (S.t0 === null) S.t0 = t;
+  if (S.prevT && t > S.prevT) S.durSum += Math.min(0.5, t - S.prevT);
   S.tEnd = t;
 
   drawSkeleton(lm, W, H, ok);
@@ -320,7 +321,7 @@ function processResult(res, t) {
   const sym = Math.max(0, 100 - asym * 2);
   $("m-sym").textContent = Math.round(sym) + "%"; $("g-sym").style.width = sym + "%";
   $("m-tempo").textContent = S.tempoLast ? S.tempoLast.toFixed(1) + " s/rep" : "-";
-  const el = t - S.t0; $("m-clock").textContent = `${Math.floor(el/60)}:${String(Math.floor(el%60)).padStart(2,"0")}`;
+  const el = S.durSum; $("m-clock").textContent = `${Math.floor(el/60)}:${String(Math.floor(el%60)).padStart(2,"0")}`;
 
   drawChart(t);
 }
@@ -408,7 +409,7 @@ $("b-stop").onclick = () => endSession();
 function sessionStats() {
   if (!S || S.detected < 5) return null;
   const quality = S.detected / Math.max(1, S.frames);
-  const dur = S.tEnd - (S.t0 ?? S.tEnd);
+  const dur = S.durSum;
   const rom = {}; for (const k in S.rom) rom[k] = Math.round(Math.max(0, S.rom[k][1] - S.rom[k][0]));
   const energy = S.energyN ? S.energySum / S.energyN : 0;
   const smooth = S.accN ? Math.max(0, 100 - (S.accSum / S.accN) * 8) : 0;
@@ -424,8 +425,8 @@ function endSession() {
   const body = $("rep-body"), note = $("rep-note");
   if (!m) { note.textContent = "Not enough tracking data - try a clip where the whole body is visible."; body.innerHTML = ""; $("report").classList.add("open"); return; }
   const q = Math.round(m.quality * 100);
-  if (q < 50 || m.dur < 20) {
-    note.textContent = `Session not scored: tracking quality ${q}%, duration ${Math.round(m.dur)}s. Need at least 50% quality and 20s - full body in frame, ~2 m, steady lighting.`;
+  if (q < 50 || m.dur < 15) {
+    note.textContent = `Session not scored: tracking quality ${q}%, duration ${Math.round(m.dur)}s. Need at least 50% quality and 15s - full body in frame, ~2 m, steady lighting.`;
     body.innerHTML = ""; $("report").classList.add("open"); return;
   }
   // compare to previous session (same device, same protocol = honest delta)
