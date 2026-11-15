@@ -149,7 +149,8 @@ function angleDeg(a, b, c, W, H) {
   return Math.acos(Math.max(-1, Math.min(1, d))) * 180/Math.PI;
 }
 const dist = (a, b, W, H) => Math.hypot((a.x-b.x)*W, (a.y-b.y)*H);
-const visOK = lm => KEY_JOINTS.every(i => (lm[i].visibility ?? 1) > 0.45);
+const CORE = [11,12,13,14,15,16,23,24,25,26];
+const visOK = lm => CORE.every(i => (lm[i].visibility ?? 1) > 0.4);
 
 async function loadEngine() {
   try {
@@ -183,10 +184,10 @@ function drawSkeleton(lm, W, H, ok) {
   // motion trails: wrists + ankles, fading
   const pts = { lw:lm[15], rw:lm[16], la:lm[27], ra:lm[28] };
   for (const k in pts) {
-    const tr = S.trails[k]; tr.push({x:pts[k].x, y:pts[k].y}); if (tr.length > 24) tr.shift();
+    const tr = S.trails[k]; tr.push({x:pts[k].x, y:pts[k].y}); if (tr.length > 12) tr.shift();
     og.beginPath();
     tr.forEach((p, i) => { const X=p.x*W*sx, Y=p.y*H*sy; i ? og.lineTo(X,Y) : og.moveTo(X,Y); });
-    og.strokeStyle = "rgba(56,225,255,.35)"; og.lineWidth = 2; og.stroke();
+    og.strokeStyle = "rgba(56,225,255,.22)"; og.lineWidth = 1.5; og.stroke();
   }
 }
 
@@ -400,6 +401,7 @@ function endSession() {
 $("b-close").onclick = () => $("report").classList.remove("open");
 $("b-again").onclick = () => { $("report").classList.remove("open"); };
 
+window.__dbg = () => S ? {frames:S.frames, detected:S.detected, energyN:S.energyN, energySum:+S.energySum.toFixed(4), hasPrev:!!S.prev, accN:S.accN, t0:S.t0, tEnd:S.tEnd} : null;
 loadEngine();
 // headless/self-test hook
 if (new URLSearchParams(location.search).has("autotest")) {
