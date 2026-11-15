@@ -169,10 +169,10 @@ const TIPS = {
   hr:["Rest 5 min and re-measure; review caffeine, stress and hydration.","Check fitness routine and recovery."],
   glu:["Review meals; repeat fasting measurement tomorrow.","Eat something and re-measure."],
   temp:["Isolate from crewmates if fever, record symptoms, contact flight surgeon.","Warm up and re-measure."],
-  sleep:["Dim lights an hour before sleep, keep a fixed schedule, reduce noise.","Oversleeping can signal low mood or fatigue; check mood."],
-  mood:["Schedule a private call with family or a counselor; do a short group activity.","Keep up routines."],
-  ex:["Do the planned resistance session today; protect bones and muscle.","Avoid overtraining; rest day."],
-  mob:["Do a full exercise session (treadmill or resistance), then re-test in the Motion Lab. If mobility keeps falling, report to the flight surgeon.","Mobility is unusually high - check you rested enough."],
+  sleep:["Oversleeping can signal low mood or fatigue; check mood.","Dim lights an hour before sleep, keep a fixed schedule, reduce noise."],
+  mood:["Keep up routines.","Schedule a private call with family or a counselor; do a short group activity."],
+  ex:["Avoid overtraining; rest day.","Do the planned resistance session today; protect bones and muscle."],
+  mob:["Mobility is unusually high - check you rested enough.","Do a full exercise session (treadmill or resistance), then re-test in the Motion Lab. If mobility keeps falling, report to the flight surgeon."],
   rad:["Check the radiation watch below. Move to the best shielded module during solar events.","Dose is above plan: log location and notify ground."]
 };
 const KEY = "orbiterVitals.v1";
@@ -276,7 +276,7 @@ function render() {
     st.insertAdjacentHTML("beforeend",
       `<div class="row"><span>${IND[k].name}: <b>${last[k]}</b> ${IND[k].unit}${delta}</span><span class="pill ${NAMES[l]}">${LABEL[l]}</span></div>`);
     if (l > 0) {
-      const low = last[k] < IND[k].r[1];
+      const low = (b && b[k] !== undefined) ? last[k] < b[k] : last[k] < IND[k].r[1];
       actions.insertAdjacentHTML("beforeend", `<li><b>${IND[k].name}</b>: ${TIPS[k][low?1:0]}</li>`);
       acts++;
     }
