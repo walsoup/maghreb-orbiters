@@ -166,7 +166,8 @@ function resetSession() {
         prev:null, prevT:0, prevVel:null,
         energySum:0, energyN:0, accSum:0, accN:0,
         rom: { lKnee:[999,0], rKnee:[999,0], lElbow:[999,0], rElbow:[999,0] },
-        reps: { knee:{n:0, st:"ext", lastT:0}, elbow:{n:0, st:"ext", lastT:0} },
+        reps: { knee:{n:0, st:"ext", lastT:0, lastFlip:0}, elbow:{n:0, st:"ext", lastT:0, lastFlip:0} },
+        smAng: null,
         repTimes: [],        // {t, kind}
         asymSum:0, asymN:0,
         hist: [],            // {t, lKnee, rKnee, lElbow, rElbow}
@@ -234,11 +235,14 @@ function drawAngleArc(lm, a, b, c, W, H, label) {
 
 function repTick(kind, ang, t) {
   const g = REP_GATE[kind], r = S.reps[kind];
-  if (r.st === "ext" && ang < g.flex) r.st = "flex";
-  else if (r.st === "flex" && ang > g.ext) {
-    r.st = "ext"; r.n++;
-    if (r.lastT) S.tempoLast = t - r.lastT;
-    r.lastT = t; S.repTimes.push({t, kind});
+  if (r.st === "ext" && ang < g.flex) {
+    if (t - r.lastFlip >= 0.7) { r.st = "flex"; r.lastFlip = t; }
+  } else if (r.st === "flex" && ang > g.ext) {
+    if (t - r.lastFlip >= 0.7) {
+      r.st = "ext"; r.n++; r.lastFlip = t;
+      if (r.lastT) S.tempoLast = t - r.lastT;
+      r.lastT = t; S.repTimes.push({t, kind});
+    }
   }
 }
 
@@ -268,9 +272,13 @@ function processResult(res, t) {
   for (const k in ang) { const r = S.rom[k]; if (ang[k] < r[0]) r[0] = ang[k]; if (ang[k] > r[1]) r[1] = ang[k]; }
   S.hist.push({ t, ...ang }); while (S.hist.length && S.hist[0].t < t - CH_WINDOW) S.hist.shift();
 
-  // reps from average side angles; tempo from time between reps
-  repTick("knee", (ang.lKnee + ang.rKnee) / 2, t);
-  repTick("elbow", (ang.lElbow + ang.rElbow) / 2, t);
+  // reps from average side angles, EMA-smoothed to reject landmark jitter
+  if (!S.smAng) S.smAng = { knee:(ang.lKnee+ang.rKnee)/2, elbow:(ang.lElbow+ang.rElbow)/2 };
+  const A = 0.35;
+  S.smAng.knee  += A * ((ang.lKnee  + ang.rKnee ) / 2 - S.smAng.knee);
+  S.smAng.elbow += A * ((ang.lElbow + ang.rElbow) / 2 - S.smAng.elbow);
+  repTick("knee", S.smAng.knee, t);
+  repTick("elbow", S.smAng.elbow, t);
   // symmetry: mean |left - right| over knee+elbow
   S.asymSum += (Math.abs(ang.lKnee - ang.rKnee) + Math.abs(ang.lElbow - ang.rElbow)) / 2; S.asymN++;
 
@@ -340,13 +348,13 @@ function drawChart(t) {
 function loop() {
   if (video.readyState >= 2 && pose && S) {
     const t = video.currentTime;
-    if (t !== loop._lt) { loop._lt = t; pose.detectForVideo(video, performance.now(), r => processResult(r, t)); }
+    if (t - loop._lt >= 1/30) { loop._lt = t; pose.detectForVideo(video, performance.now(), r => processResult(r, t)); }
   }
   rafId = requestAnimationFrame(loop);
 }
 
 function startSession() {
-  resetSession(); loop._lt = -1;
+  resetSession(); loop._lt = -1e9;
   $("r-squat").textContent = "0"; $("r-arm").textContent = "0";
   $("m-energy").textContent = "-"; $("g-energy").style.width = "0%";
   $("m-sym").textContent = "-"; $("g-sym").style.width = "0%";
