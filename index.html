@@ -347,6 +347,11 @@ function loop() {
 
 function startSession() {
   resetSession(); loop._lt = -1;
+  $("r-squat").textContent = "0"; $("r-arm").textContent = "0";
+  $("m-energy").textContent = "-"; $("g-energy").style.width = "0%";
+  $("m-sym").textContent = "-"; $("g-sym").style.width = "0%";
+  $("m-tempo").textContent = "-"; $("m-clock").textContent = "0:00";
+  hud.textContent = "";
   $("b-stop").style.display = "";
   if (rafId) cancelAnimationFrame(rafId);
   rafId = requestAnimationFrame(loop);
@@ -436,7 +441,7 @@ loadEngine();
 if (new URLSearchParams(location.search).has("autotest")) {
   const t0 = Date.now();
   const iv = setInterval(() => {
-    if (pose) { $("b-sample").click(); }
+    if (pose && !iv._clicked) { iv._clicked = true; $("b-sample").click(); }
     if ((S && S.frames > 120) || Date.now() - t0 > 45000) {
       clearInterval(iv);
       document.title = "AUTOTEST frames=" + (S ? S.frames : 0) + " detected=" + (S ? S.detected : 0);
