@@ -440,8 +440,9 @@ loadEngine();
 // headless/self-test hook
 if (new URLSearchParams(location.search).has("autotest")) {
   const t0 = Date.now();
+  let clicked = false;
   const iv = setInterval(() => {
-    if (pose && !iv._clicked) { iv._clicked = true; $("b-sample").click(); }
+    if (pose && !clicked) { clicked = true; $("b-sample").click(); }
     if ((S && S.frames > 120) || Date.now() - t0 > 180000) {
       clearInterval(iv);
       document.title = "AUTOTEST frames=" + (S ? S.frames : 0) + " detected=" + (S ? S.detected : 0);
