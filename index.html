@@ -100,7 +100,7 @@
 
   <section class="card full" id="motionlab">
     <h2>5. Motion Lab - on-device movement analysis (experimental)</h2>
-    <p class="tip">Pose estimation runs fully in the browser (MediaPipe, 33 body landmarks, no video leaves the device). It measures movement energy, joint range of motion, posture, exercise reps and left/right asymmetry from any camera or clip - on a mission this turns any ISS camera into a musculoskeletal health sensor. Try the bundled NASA ISS footage, your webcam, or any video file.</p>
+    <p class="tip">Pose estimation runs fully in the browser (MediaPipe, 33 body landmarks, no video leaves the device). It measures movement energy, joint range of motion, exercise reps and left/right asymmetry from any camera or clip. Protocol: stand ~2 m from the camera, full body in frame, 60 s of the same squat + arm-raise cycle every session - a session score only means something against your own baseline under the same setup. Try the bundled NASA ISS footage, your webcam, or any video file.</p>
     <div class="ml-flex">
       <div>
         <div id="ml-stage">
@@ -281,7 +281,7 @@ function render() {
       acts++;
     }
   }
-  // trend alert: 3 consecutive worsening days in any indicator
+  // trend alert: worsening status across the last 4 logged days in any indicator
   let trend = [];
   if (log.length >= 4) for (const k in IND) {
     const s = log.slice(-4).map(x => statusLevel(k, x[k], b));
@@ -343,9 +343,12 @@ function init() {
     if (latest && (Date.now() - latest.getTime()) / 36e5 <= 72) {
       el.style.display = "block";
       el.style.background = "#3a1622"; el.style.color = "#ff5d73";
+      const lastRad = log.length ? log[log.length - 1].rad : null;
+      const doseLine = lastRad == null ? ""
+        : " Today's logged dose: " + lastRad + " mSv/day - " + (lastRad > 1.0 ? "ELEVATED vs the 1.0 mSv/day OK band, matches the event." : "within the OK band; keep logging twice daily.");
       el.textContent = "SPACE WEATHER ALERT: solar particle event " +
         latest.toISOString().slice(0,16).replace("T"," ") +
-        " UTC. Radiation protocol: postpone EVAs, shelter in the most shielded module during elevated flux, confirm dosimeter readings, log dose twice daily.";
+        " UTC. Radiation protocol: postpone EVAs, shelter in the most shielded module during elevated flux, confirm dosimeter readings, log dose twice daily." + doseLine;
       window.__sepAlert = true;
     } else { el.style.display = "none"; window.__sepAlert = false; }
   }
@@ -547,6 +550,11 @@ function showSummary() {
     sum.innerHTML = `<p class="tip">Not enough tracking data to score. Try a clip where the whole body is visible.</p>`;
     return;
   }
+  // quality gate: a score from a bad session is worse than no score
+  if (m.quality < 50 || m.dur < 20) {
+    sum.innerHTML = `<p class="tip">Session not scored: tracking quality ${m.quality}%, duration ${m.dur}s. Need at least 50% quality and 20s. Follow the protocol above (full body in frame, ~2 m, 60s) and try again.</p>`;
+    return;
+  }
   const cls = m.idx >= 45 ? "ok" : m.idx >= 25 ? "warn" : "bad";
   // baseline comparison: the index only means something against YOUR norm
   const bb = baselineVals();
@@ -558,7 +566,7 @@ function showSummary() {
   const repLine = (m.reps.knee + m.reps.elbow) > 0
     ? `<div class="row"><span>Exercise reps counted</span><b>${m.reps.knee} squat / ${m.reps.elbow} arm</b></div>` : "";
   const asymLine = m.asym > 15
-    ? `<div class="row"><span>Left/right asymmetry</span><b style="color:#ffc857">${m.asym}&deg; - guarding?</b></div>`
+    ? `<div class="row"><span>Left/right asymmetry</span><b style="color:#ffc857">${m.asym}&deg; - re-test with the same setup; if it persists, note it</b></div>`
     : `<div class="row"><span>Left/right asymmetry</span><b>${m.asym}&deg;</b></div>`;
   sum.innerHTML = `
     <div class="stat" style="text-align:center"><span>session mobility index</span>
@@ -573,6 +581,7 @@ function showSummary() {
     <div class="row"><span>Movement smoothness</span><b>${m.smooth}/100</b></div>
     <div class="row"><span>Avg body-axis tilt</span><b>${m.tilt}&deg;</b></div>
     <div class="row"><span>Pose tracking quality</span><b>${m.quality}%</b></div>
+    <p class="small">Experimental formula: 0.45 x movement energy + 0.30 x joint range + 0.25 x smoothness, scaled by tracking quality. A session metric for spotting change against your own baseline - not a clinical measure.</p>
     <button id="ml-log">Log session to health record</button>`;
   $("ml-log").onclick = () => {
     const e = readForm(); e.mob = m.idx;
