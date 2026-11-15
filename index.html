@@ -48,8 +48,9 @@
 <body>
 <header>
   <h1>Orbiter Vitals <span class="small">self-assessment dashboard + AI motion tracking for long-duration crews</span></h1>
-  <div><span class="small">Mission day</span> <b id="mday">14</b> &nbsp; <span id="overall" class="pill ok">NOMINAL</span></div>
+  <div><span class="small">Mission day</span> <b id="mday">14</b> &nbsp; <span id="overall" class="pill ok">NOMINAL</span> &nbsp; <span id="baselinenote" class="small"></span></div>
 </header>
+<div id="spacealert" style="display:none; padding:10px 20px; font-weight:600; font-size:14px;"></div>
 <main>
   <section class="card" id="form">
     <h2>1. Log today's measurements</h2>
@@ -141,19 +142,25 @@
 
 <script>
 // Indicator definitions: [warnLow, okLow, okHigh, warnHigh]. Outside warn bounds = red.
+// dir: which direction is bad ('high', 'low', 'both'). dev: [warn, bad] fractional
+// deviation from the crew member's own baseline. Real crew health monitoring is
+// baseline-relative: flight surgeons compare against the individual's pre-flight
+// norms, not generic population ranges. The absolute ranges r[] stay as hard
+// guardrails for values that are dangerous no matter the baseline.
 const IND = {
-  sys:  {name:"Systolic BP", unit:"mmHg", r:[90,100,129,139], part:"heart",
+  sys:  {name:"Systolic BP", unit:"mmHg", r:[90,100,129,139], part:"heart", dir:"both", dev:[0.10,0.20],
          why:"Fluid shifts in microgravity and cardiovascular deconditioning change blood pressure."},
-  dia:  {name:"Diastolic BP", unit:"mmHg", r:[55,60,84,89], part:"heart", why:"See systolic."},
-  hr:   {name:"Resting heart rate", unit:"bpm", r:[45,50,85,100], part:"heart", why:"A rising resting rate can signal deconditioning, stress, dehydration or illness."},
-  glu:  {name:"Fasting glucose", unit:"mg/dL", r:[60,70,99,125], part:"gut", why:"Stress and diet changes affect glucose control on long missions."},
-  temp: {name:"Body temperature", unit:"C", r:[35.5,36.0,37.4,38.0], part:"gut", why:"Fever can show infection; spaceflight changes immune function."},
-  sleep:{name:"Sleep", unit:"h", r:[5,6.5,9,10], part:"brain", why:"Light/dark cycles, noise and workload disturb sleep, which hits mood and performance."},
-  mood: {name:"Mood", unit:"/5", r:[1.5,3,5,6], part:"brain", why:"Isolation and confinement are behavioral health hazards."},
-  ex:   {name:"Exercise", unit:"min", r:[30,60,240,300], part:"bone", why:"Microgravity causes bone and muscle loss; daily exercise is the main countermeasure."},
-  mob:  {name:"Mobility index (Motion Lab)", unit:"/100", r:[25,45,100,101], part:"bone", why:"In-browser pose tracking measures how well the crew actually moves. Falling mobility can reveal deconditioning, injury or fatigue before it shows in vitals."},
-  rad:  {name:"Daily radiation dose", unit:"mSv", r:[-1,-0.5,1.5,3], part:"arms", why:"Space radiation raises long-term cancer and cardiovascular risk. ISS crews receive roughly 0.5-1 mSv/day; deep space is higher."}
+  dia:  {name:"Diastolic BP", unit:"mmHg", r:[55,60,84,89], part:"heart", dir:"both", dev:[0.12,0.25], why:"See systolic."},
+  hr:   {name:"Resting heart rate", unit:"bpm", r:[45,50,85,100], part:"heart", dir:"high", dev:[0.15,0.30], why:"A rising resting rate can signal deconditioning, stress, dehydration or illness."},
+  glu:  {name:"Fasting glucose", unit:"mg/dL", r:[60,70,99,125], part:"gut", dir:"both", dev:[0.15,0.30], why:"Stress and diet changes affect glucose control on long missions."},
+  temp: {name:"Body temperature", unit:"C", r:[35.5,36.0,37.4,38.0], part:"gut", dir:"both", dev:[0.012,0.025], why:"Fever can show infection; spaceflight changes immune function."},
+  sleep:{name:"Sleep", unit:"h", r:[5,6.5,9,10], part:"brain", dir:"low", dev:[0.20,0.35], why:"Light/dark cycles, noise and workload disturb sleep, which hits mood and performance."},
+  mood: {name:"Mood", unit:"/5", r:[1.5,3,5,6], part:"brain", dir:"low", dev:[0.25,0.45], why:"Isolation and confinement are behavioral health hazards."},
+  ex:   {name:"Exercise", unit:"min", r:[30,60,240,300], part:"bone", dir:"low", dev:[0.30,0.60], why:"Microgravity causes bone and muscle loss; daily exercise is the main countermeasure."},
+  mob:  {name:"Mobility index (Motion Lab)", unit:"/100", r:[25,45,100,101], part:"bone", dir:"low", dev:[0.20,0.40], why:"In-browser pose tracking measures how well the crew actually moves. Falling mobility can reveal deconditioning, injury or fatigue before it shows in vitals."},
+  rad:  {name:"Daily radiation dose", unit:"mSv", r:[-1,-0.5,1.5,3], part:"arms", dir:"high", dev:[0.50,1.00], why:"Space radiation raises long-term cancer and cardiovascular risk. ISS crews receive roughly 0.5-1 mSv/day; deep space is higher."}
 };
+const BASE_DAYS = 3; // first days of the mission establish the personal baseline
 const TIPS = {
   sys:["Rest, hydrate, repeat the reading in 15 min. If still high, message the flight surgeon.","Hydrate, check for dizziness. Low pressure after exercise is common but log it."],
   dia:["Repeat measurement seated and calm.","Hydrate and repeat."],
@@ -176,6 +183,27 @@ function level(k, v) {
   if (v >= wl && v <= wh) return 1;
   return 2;
 }
+// Personal baseline: mean of the first BASE_DAYS days with data per indicator.
+function baselineVals() {
+  if (log.length < BASE_DAYS) return null;
+  const b = {};
+  for (const k in IND) {
+    const vals = log.slice(0, BASE_DAYS).map(x => x[k]).filter(v => v !== undefined && v !== null && !isNaN(v));
+    if (vals.length >= 2) b[k] = vals.reduce((s, v) => s + v, 0) / vals.length;
+  }
+  return b;
+}
+// Deviation-from-baseline level: 0 ok, 1 watch, 2 act.
+function devLevel(k, v, b) {
+  if (!b || b[k] === undefined || !IND[k].dev) return 0;
+  const frac = (v - b[k]) / (Math.abs(b[k]) || 1);
+  const worse = IND[k].dir === "high" ? frac : IND[k].dir === "low" ? -frac : Math.abs(frac);
+  if (worse >= IND[k].dev[1]) return 2;
+  if (worse >= IND[k].dev[0]) return 1;
+  return 0;
+}
+// Effective status: the worse of the absolute guardrails and baseline drift.
+function statusLevel(k, v, b) { return Math.max(level(k, v), devLevel(k, v, b)); }
 const NAMES = ["ok","warn","bad"], LABEL = ["OK","WATCH","ACT"];
 function gen(day, bad) {
   const rnd = (a, b) => a + Math.random() * (b - a);
@@ -209,6 +237,10 @@ function render() {
   const actions = document.getElementById("actions"); actions.innerHTML = "";
   document.getElementById("mday").textContent = last ? last.day : "-";
   document.querySelectorAll("#body .part").forEach(p => p.classList.remove("ok","warn","bad"));
+  const b = baselineVals();
+  const bl = document.getElementById("baselinenote");
+  if (bl) bl.textContent = b ? "baseline set (days 1-" + BASE_DAYS + ")"
+    : "building personal baseline: day " + log.length + "/" + BASE_DAYS;
   if (!last) { st.textContent = "No data yet. Log a measurement."; return; }
   let worst = 0; const partWorst = {}; let acts = 0;
   for (const k in IND) {
@@ -217,11 +249,16 @@ function render() {
         `<div class="row"><span>${IND[k].name}: <b>-</b></span><span class="pill ok">NO DATA</span></div>`);
       continue;
     }
-    const l = level(k, last[k]);
+    const l = statusLevel(k, last[k], b);
     worst = Math.max(worst, l);
     partWorst[IND[k].part] = Math.max(partWorst[IND[k].part] || 0, l);
+    let delta = "";
+    if (b && b[k] !== undefined) {
+      const pct = Math.round((last[k] - b[k]) / (Math.abs(b[k]) || 1) * 100);
+      delta = ` <span class="small">${pct >= 0 ? "+" : ""}${pct}% vs baseline</span>`;
+    }
     st.insertAdjacentHTML("beforeend",
-      `<div class="row"><span>${IND[k].name}: <b>${last[k]}</b> ${IND[k].unit}</span><span class="pill ${NAMES[l]}">${LABEL[l]}</span></div>`);
+      `<div class="row"><span>${IND[k].name}: <b>${last[k]}</b> ${IND[k].unit}${delta}</span><span class="pill ${NAMES[l]}">${LABEL[l]}</span></div>`);
     if (l > 0) {
       const low = last[k] < IND[k].r[1];
       actions.insertAdjacentHTML("beforeend", `<li><b>${IND[k].name}</b>: ${TIPS[k][low?1:0]}</li>`);
@@ -231,7 +268,7 @@ function render() {
   // trend alert: 3 consecutive worsening days in any indicator
   let trend = [];
   if (log.length >= 4) for (const k in IND) {
-    const s = log.slice(-4).map(x => level(k, x[k]));
+    const s = log.slice(-4).map(x => statusLevel(k, x[k], b));
     if (s[3] > 0 && s[3] >= s[2] && s[2] >= s[1] && s[1] >= s[0] && s[3] > s[0]) trend.push(IND[k].name);
   }
   if (!acts) actions.innerHTML = "<li>All indicators nominal. Keep up sleep, exercise and your measurement routine.</li>";
@@ -272,18 +309,52 @@ function init() {
     document.getElementById("partinfo").innerHTML = "<b>" + part.toUpperCase() + "</b><br>" +
       ks.map(k => `${IND[k].name}: ${IND[k].why}`).join("<br>");
   });
+  // Space weather: auto-check on load (cached 6h). A recent SEP event raises
+  // crew radiation risk and changes the mission advice, so it gets a banner,
+  // not a buried button. The button still shows the full 30-day list.
+  const DONKI_CACHE = "orbiterVitals.donki.v1";
+  async function fetchSEP(days) {
+    const end = new Date(), start = new Date(end - days*864e5), f = d => d.toISOString().slice(0,10);
+    const r = await fetch(`https://ccmc.gsfc.nasa.gov/DONKI-API/get/SEP?startDate=${f(start)}&endDate=${f(end)}`);
+    if (!r.ok) throw new Error("DONKI " + r.status);
+    return r.json();
+  }
+  function latestSEP(ev) {
+    return ev.map(e => new Date(e.eventTime)).filter(d => !isNaN(d)).sort((x, y) => y - x)[0] || null;
+  }
+  function showSpaceAlert(latest) {
+    const el = document.getElementById("spacealert");
+    if (latest && (Date.now() - latest.getTime()) / 36e5 <= 72) {
+      el.style.display = "block";
+      el.style.background = "#3a1622"; el.style.color = "#ff5d73";
+      el.textContent = "SPACE WEATHER ALERT: solar particle event " +
+        latest.toISOString().slice(0,16).replace("T"," ") +
+        " UTC. Radiation protocol: postpone EVAs, shelter in the most shielded module during elevated flux, confirm dosimeter readings, log dose twice daily.";
+      window.__sepAlert = true;
+    } else { el.style.display = "none"; window.__sepAlert = false; }
+  }
+  async function autoDonki() {
+    try {
+      const cached = JSON.parse(localStorage.getItem(DONKI_CACHE) || "null");
+      let ev;
+      if (cached && Date.now() - cached.t < 6*36e5) ev = cached.ev;
+      else { ev = await fetchSEP(7); localStorage.setItem(DONKI_CACHE, JSON.stringify({t: Date.now(), ev})); }
+      showSpaceAlert(latestSEP(ev));
+    } catch (e) { /* offline: stay quiet; the manual button reports errors */ }
+  }
   document.getElementById("donki").onclick = async () => {
     const out = document.getElementById("donkiout");
-    const end = new Date(), start = new Date(end - 30*864e5), f = d => d.toISOString().slice(0,10);
     out.textContent = "Loading...";
     try {
-      const r = await fetch(`https://ccmc.gsfc.nasa.gov/DONKI-API/get/SEP?startDate=${f(start)}&endDate=${f(end)}`);
-      const ev = await r.json();
+      const ev = await fetchSEP(30);
+      localStorage.setItem(DONKI_CACHE, JSON.stringify({t: Date.now(), ev}));
+      showSpaceAlert(latestSEP(ev));
       out.innerHTML = ev.length
         ? `<b>${ev.length} solar particle event(s) in the last 30 days.</b><ul>` + ev.slice(-5).map(e => `<li>${e.eventTime}</li>`).join("") + "</ul>Suggested action: confirm dosimeter readings and know your shielded shelter."
         : "No solar particle events in the last 30 days. Radiation risk from solar events is low right now.";
     } catch (e) { out.textContent = "Could not reach NASA DONKI (offline?). Try again with a connection."; }
   };
+  autoDonki();
   if (!log.length) simulate(false); else render();
 }
 init();
