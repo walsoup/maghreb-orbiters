@@ -83,9 +83,9 @@
   </div>
   <div class="src">
     <span class="tag">NO VIDEO LEAVES THIS DEVICE</span>
-    <button id="b-sample">Analyze NASA ISS footage</button>
-    <button class="alt" id="b-cam">Webcam</button>
-    <button class="alt" id="b-upload">Upload video</button>
+    <button id="b-sample" disabled>Analyze NASA ISS footage</button>
+    <button class="alt" id="b-cam" disabled>Webcam</button>
+    <button class="alt" id="b-upload" disabled>Upload video</button>
     <input type="file" id="file" accept="video/*" hidden>
     <button class="alt" id="b-stop" style="display:none">Stop & report</button>
   </div>
@@ -198,6 +198,7 @@ async function loadEngine() {
     const opts = delegate => ({ baseOptions:{ modelAssetPath:modelPath, delegate }, runningMode:"VIDEO", numPoses:1 });
     try { pose = await mod.PoseLandmarker.createFromOptions(fileset, opts("GPU")); }
     catch (e) { pose = await mod.PoseLandmarker.createFromOptions(fileset, opts("CPU")); }
+    for (const id of ["b-sample", "b-cam", "b-upload"]) $(id).disabled = false;
     statusEl.textContent = "Pose engine ready - pick a video source. Everything runs on this device.";
   } catch (e) {
     statusEl.textContent = "Could not load the pose engine (needs the bundled model files or an internet connection).";
