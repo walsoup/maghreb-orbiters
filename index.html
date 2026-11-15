@@ -222,7 +222,6 @@ function processResult(res, t) {
   const ok = visOK(lm);
   trackEl.textContent = ok ? "TRACKING" : "PARTIAL";
   trackEl.style.color = ok ? "#3ddc97" : "#ffc857";
-  if (!ok) { S.prev = null; S.prevVel = null; }
   S.detected++;
   if (S.t0 === null) S.t0 = t;
   S.tEnd = t;
